@@ -36,6 +36,9 @@ import study_common as sc
 
 M_LEVELS = [0, 3, 5, 8, 12, 20, 40]
 WCORR_LEVELS = [0.0, 0.15e-3, 0.40e-3]
+# lean: brackets the realistic range (m 5-20) plus the no-scatter reference, per-bond vs one grain size
+PROFILES = {"full": dict(m=M_LEVELS, wcorr=WCORR_LEVELS, seeds=10),
+            "lean": dict(m=[0, 5, 10, 20], wcorr=[0.0, 0.25e-3], seeds=5)}
 Q_GRID = np.arange(1e3, 40.01e3, 1e3)
 Q_STAR = [5e3, 10e3, 20e3, 30e3, 40e3]
 Q_PEAK = 40e3
@@ -47,11 +50,13 @@ def plan(a):
     scen = [("ramp", config.ramp(Q_PEAK, 2.0), False)]
     if a.with_cycle:
         scen.append(("cycle", config.ramp_hold_cool(Q_PEAK, 2.0, 24.0, 1.0), True))
+    prof = PROFILES[a.profile]
+    seeds = a.seeds or prof["seeds"]
     cases, k = [], 0
     for sname, hist, creep in scen:
-        for m in M_LEVELS:
-            for wc in WCORR_LEVELS:
-                for seed in range(1, a.seeds + 1):
+        for m in prof["m"]:
+            for wc in prof["wcorr"]:
+                for seed in range(1, seeds + 1):
                     p = dict(config.UO2, **config.GEOM, **config.calib_params(cal), dqmax=1e3, every=10)
                     p.update(weibull=m, wcorr=wc, seed=seed)
                     if creep:
@@ -62,8 +67,8 @@ def plan(a):
                                                   "calib_mode": cal["mode"]}))
                     k += 1
     sc.plan_study(sdir, a.name, cases,
-                  {"purpose": "Weibull strength-distribution study", "m_levels": M_LEVELS, "wcorr_levels_m": WCORR_LEVELS,
-                   "seeds": a.seeds, "scenarios": [s[0] for s in scen], "calibration": cal, "material": config.UO2,
+                  {"purpose": "Weibull strength-distribution study", "profile": a.profile, "m_levels": prof["m"],
+                   "wcorr_levels_m": prof["wcorr"], "seeds": seeds, "scenarios": [s[0] for s in scen], "calibration": cal, "material": config.UO2,
                    "geometry": config.GEOM},
                   bucket=a.bucket, image=a.image, machine=a.machine, card=__doc__.split("Outputs")[0])
     e = config.estimate_run(config.GEOM["R"], config.GEOM["H"], cal["delta"], cal["mfac"], 40)
@@ -165,7 +170,7 @@ def plot(a):
     lev = pd.read_csv(os.path.join(dd, "weibull_levels.csv"))
     band = pd.read_csv(os.path.join(dd, "weibull_curves.csv"))
     ramp = lev[lev.scenario == "ramp"]
-    cols = {0.0: "#2a6fdb", 0.15: "#d9822b", 0.4: "#3a9a5b"}
+    cols = {0.0: "#2a6fdb", 0.15: "#d9822b", 0.25: "#d9822b", 0.4: "#3a9a5b"}
     fig, ax = plt.subplots(figsize=(6, 4.2), constrained_layout=True)
     for wc, g in ramp[ramp.weibull_m > 0].groupby("wcorr_mm"):
         g = g.sort_values("weibull_m")
@@ -195,7 +200,7 @@ def plot(a):
     if os.path.exists(fp):
         fr = pd.read_csv(fp)
         fig, ax = plt.subplots(figsize=(6, 4.2), constrained_layout=True)
-        for i, (m, g) in enumerate(fr[(fr.scenario == "ramp") & (fr.wcorr_mm == 0.15)].groupby("weibull_m")):
+        for i, (m, g) in enumerate(fr[(fr.scenario == "ramp") & (fr.wcorr_mm == fr.wcorr_mm[fr.wcorr_mm > 0].min())].groupby("weibull_m")):
             v = np.sort(g.volume_mm3.to_numpy())
             ax.plot(v, np.linspace(0, 1, len(v)), lw=2, color=plt.get_cmap("Blues")(0.3 + 0.1 * i),
                     label="no scatter" if m == 0 else f"m={m:g}")
@@ -209,10 +214,11 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sp = ap.add_subparsers(dest="cmd", required=True)
     p = sp.add_parser("plan"); p.add_argument("--root", default="studies"); p.add_argument("--name", default="weibull")
-    p.add_argument("--seeds", type=int, default=10); p.add_argument("--with-cycle", action="store_true")
+    p.add_argument("--profile", choices=["lean", "full"], default="lean")
+    p.add_argument("--seeds", type=int, default=0, help="0 = profile default"); p.add_argument("--with-cycle", action="store_true")
     p.add_argument("--calib", default="studies/meshconv/derived/convergence.json")
-    p.add_argument("--bucket", default="BUCKET"); p.add_argument("--machine", default="c3d-highcpu-30")
-    p.add_argument("--image", default="us-central1-docker.pkg.dev/PROJECT/pellet/pellet-pd:2")
+    p.add_argument("--bucket", default="BUCKET"); p.add_argument("--machine", default=config.MACHINE)
+    p.add_argument("--image", default=config.IMAGE)
     for n in ("analyze", "plot"):
         q = sp.add_parser(n); q.add_argument("study_dir")
     a = ap.parse_args()

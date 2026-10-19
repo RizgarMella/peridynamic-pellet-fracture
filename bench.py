@@ -21,13 +21,18 @@ import config
 import pdio
 import study_common as sc
 
-MACHINES = ["c3d-highcpu-30", "c3d-highcpu-60", "c4d-highcpu-32", "c4d-highcpu-64", "n2d-highcpu-32", "c3d-highcpu-180"]
+MACHINES = ["c3d-highcpu-30", "c4d-highcpu-32", "t2d-standard-32", "n2d-highcpu-32"]
 
-# Approximate Spot USD per vCPU-hour, us-central1, from Google's Spot pricing page (Oct 2026, standard
-# shapes, memory included).  Spot prices change up to daily: refresh before analysing.
+# Spot USD per vCPU-hour in each family's cheapest region (whole-VM Spot price / vCPUs),
+# from the gcloud-compute.com tracker, Oct 2026.  Throughput per vCPU is region-independent, so the
+# benchmark can run anywhere; the analysis prices each family at its cheapest region and
+# recommends a (machine, region) pair.  Spot prices change up to daily: refresh before analysing.
 DEFAULT_PRICES = {
-    "_note": "USD per vCPU-hour (whole-VM Spot price / vCPUs). Refresh from cloud.google.com/spot-vms/pricing.",
-    "c3d": 0.0111, "c4d": 0.0195, "n2d": 0.0100, "h4d_on_demand": 0.0409,
+    "_note": "family -> [USD per vCPU-hour, region]. Refresh from cloud.google.com/spot-vms/pricing.",
+    "c3d": [0.0042, "australia-southeast1"],
+    "c4d": [0.0079, "us-west4"],
+    "t2d": [0.0073, "europe-southwest1"],
+    "n2d": [0.0086, "asia-southeast1"],
 }
 
 
@@ -57,7 +62,8 @@ def plan(a):
         with open(os.path.join(sdir, jf), "w") as f:
             for cid, thr in items:
                 f.write(f"{cid}\texport OMP_NUM_THREADS={thr}; {lines[cid]}\n")
-        sc.write_batch_job(sdir, name, len(items), machine=m, parallelism=len(items), region=a.region, image=a.image,
+        reg = DEFAULT_PRICES[m.split("-")[0]][1] if a.region == "cheapest" else a.region
+        sc.write_batch_job(sdir, name, len(items), machine=m, parallelism=len(items), region=reg, image=a.image,
                            bucket=a.bucket, max_run_h=4)
         jb = os.path.join(sdir, "jobs", "batch_job.json")
         job = json.load(open(jb))
@@ -65,8 +71,12 @@ def plan(a):
         job["taskGroups"][0]["parallelism"] = 1                 # one at a time: clean timing
         json.dump(job, open(os.path.join(sdir, "jobs", f"batch_job_{m}.json"), "w"), indent=1)
     json.dump(DEFAULT_PRICES, open(os.path.join(sdir, "prices.json"), "w"), indent=1)
-    print("submit e.g.: gcloud batch jobs submit bench-c3d30 --location", a.region,
-          f"--config {sdir}/jobs/batch_job_c3d-highcpu-30.json")
+    for m in MACHINES:
+        reg = DEFAULT_PRICES[m.split("-")[0]][1] if a.region == "cheapest" else a.region
+        print(f"gcloud batch jobs submit bench-{m.replace('highcpu', 'hc').replace('standard', 'st')} --location {reg} "
+              f"--config {sdir}/jobs/batch_job_{m}.json")
+    print("(the container image must be pullable from each region: use a multi-region Artifact Registry repo, e.g. 'us' "
+          "or 'asia', or push the image to each region)")
 
 
 def analyze(a):
@@ -81,9 +91,10 @@ def analyze(a):
             continue
         s = pdio.read_json(os.path.join(d, "summary.json"))
         fam = c.machine.split("-")[0]
-        usd_h = prices.get(fam, float("nan")) * c.vcpu
+        price, region = prices.get(fam, [float("nan"), ""])
+        usd_h = price * c.vcpu
         gbes = s["throughput_Mbond_per_s"] / 1e3
-        rows.append(dict(case_id=c.case_id, machine=c.machine, vcpu=c.vcpu, threads=c.threads,
+        rows.append(dict(case_id=c.case_id, machine=c.machine, region=region, vcpu=c.vcpu, threads=c.threads,
                          solver_time_s=s["solver_time_s"], throughput_Gbond_per_s=gbes,
                          Gbond_per_s_per_vcpu=gbes / c.vcpu, vm_usd_per_h=usd_h,
                          usd_per_Tbond=usd_h / (gbes * 3600 / 1e3) if gbes > 0 else float("nan")))
@@ -95,19 +106,19 @@ def analyze(a):
                   sources=list(df.case_id))
     if len(df):
         best = df.iloc[0]
-        rec = {"machine": best.machine, "threads": int(best.threads), "gbes_per_vcpu": float(best.Gbond_per_s_per_vcpu),
+        rec = {"machine": best.machine, "region": best.region, "threads": int(best.threads), "gbes_per_vcpu": float(best.Gbond_per_s_per_vcpu),
                "usd_per_vcpu_h": float(best.vm_usd_per_h / best.vcpu), "usd_per_Tbond": float(best.usd_per_Tbond)}
         json.dump(rec, open(os.path.join(sdir, "derived", "bench_recommendation.json"), "w"), indent=1)
         print(df.to_string(index=False))
-        print("recommendation:", rec, "\n-> copy gbes_per_vcpu / usd_per_vcpu_h into config.COST")
+        print("recommendation:", rec, "\n-> set config.REGION / MACHINE and copy gbes_per_vcpu / usd_per_vcpu_h into config.COST")
 
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sp = ap.add_subparsers(dest="cmd", required=True)
     p = sp.add_parser("plan"); p.add_argument("--root", default="studies"); p.add_argument("--name")
-    p.add_argument("--bucket", default="BUCKET"); p.add_argument("--region", default="us-central1")
-    p.add_argument("--image", default="us-central1-docker.pkg.dev/PROJECT/pellet/pellet-pd:2")
+    p.add_argument("--bucket", default="BUCKET"); p.add_argument("--region", default="cheapest", help="'cheapest' = each family in its cheapest region")
+    p.add_argument("--image", default=config.IMAGE)
     q = sp.add_parser("analyze"); q.add_argument("study_dir"); q.add_argument("--prices")
     a = ap.parse_args()
     plan(a) if a.cmd == "plan" else analyze(a)

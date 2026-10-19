@@ -8,7 +8,7 @@ A high-performance, single-file C++17/OpenMP **state-based peridynamics** solver
 * a high-resolution production run;
 * sympathetic cracking between stacked pellets.
 
-Everything runs locally or as Spot-VM task arrays on Google Cloud Batch, with outputs organised in a versioned Cloud Storage layout.
+Everything runs locally or as Spot-VM task arrays on Google Cloud Batch, with outputs organised in a versioned Cloud Storage layout. Planners default to a **lean** profile, run in the cheapest Spot region: about $36 for the whole programme at current prices, against about $220 for the full designs (DESIGN.md §6).
 
 **Start with [DESIGN.md](DESIGN.md)**: questions, model, the strength-vs-energy calibration decision, every study's design and gates, the data layout, cloud plan, cost estimates and limitations.
 
@@ -57,6 +57,8 @@ python study_common.py pull studies/meshconv --bucket B --study meshconv --execu
 python mesh_convergence.py analyze studies/meshconv && python mesh_convergence.py plot studies/meshconv
 python weibull_study.py plan --with-cycle ...         # same plan / push / submit / pull / analyze / plot cycle
 python campaign.py plan ... ; python campaign.py collect studies/campaign-A
+python fit_pysr.py studies/campaign-A --learning-curve   # only if it says EXTEND:
+python campaign.py plan --extend                          # +128/+32 runs, same Sobol sequence
 python fit_pysr.py studies/campaign-A
 python predict_fragments.py --history my_cycles.txt --R 4.1e-3 --H 9.8e-3 \
     --model studies/campaign-A/derived/pysr/model_log10_nfrag.json

@@ -54,6 +54,8 @@ The Weibull scatter is defined on a mesh-independent grain field rather than per
 
 ## 4. Studies
 
+Run counts below describe the **full** designs. The planners default to the lean profiles in §6, which keep every decision and cost about 1/6.
+
 Run order and gates. Each arrow requires the previous gate to pass.
 
     build ─► bench (Q1) ─► meshconv (Q2) ─┬─► weibull (Q3)
@@ -183,9 +185,9 @@ Run order and gates. Each arrow requires the previous gate to pass.
 
 ## 6. Cloud execution (Google Cloud)
 
-* **Machines:** Spot VMs on AMD compute-optimized C3D or C4D, chosen by the benchmark.
+* **Machines:** Spot VMs on AMD families: c3d-highcpu-30 by default, with c4d, t2d and n2d as the alternatives the benchmark compares.
   * The workload is many independent single-node OpenMP runs, so H4D (RDMA) adds nothing until the solver gets MPI.
-  * Use 16–32 vCPU tasks for the studies and one ~180-vCPU VM for the hero run.
+  * Use about 30-vCPU tasks for the studies and one large VM for the hero run.
 * **Orchestration:** Cloud Batch task arrays (`jobs/batch_job.json`), one line of `jobs/jobs.tsv` per task. `cloud/task.sh` then:
   * compiles the solver with `-march=native` for whatever CPU the VM has;
   * stages inputs and pulls any earlier attempt;
@@ -193,20 +195,42 @@ Run order and gates. Each arrow requires the previous gate to pass.
   * syncs to the bucket every 10 min and on SIGTERM;
   * on success, deletes the checkpoint and mirrors the run.
 * **Preemption and retries:** the solver writes atomic checkpoints every `--ckpt-every` steps. On SIGTERM it aborts the current step and exits 75; Batch retries on 75 and on 50001 (VM preempted).
-* **Region:** us-central1 has every family and the broadest Spot capacity. Spot prices change up to daily, so refresh `prices.json` before analysing the benchmark.
+* **Region (cheapest first).** Spot prices differ by more than 2× between regions. Batch work doesn't care where it runs, so `config.REGION` defaults to the cheapest region found.
 
-**Planner estimates.** These use the cost model in `config.py`: 0.2 G bond-evaluations/s per vCPU, about 110 ADR iterations per step per particle across the radius, and C3D Spot at $0.011/vCPU-h. Expect ±2–3×, and replace them with benchmark numbers.
+  | Machine (Spot) | Cheapest region | $/vCPU-h | us-central1 $/vCPU-h |
+  |---|---|---|---|
+  | c3d-highcpu-30 | australia-southeast1 | ~0.0042 | ~0.0095 |
+  | t2d-standard-32 | europe-southwest1 | ~0.0073 | – |
+  | c4d-highcpu-32 | us-west4 | ~0.0079 | ~0.016 |
+  | n2d-highcpu-32 | asia-southeast1 | ~0.0086 | – |
 
-| Study | Runs | vCPU-h | Spot USD (C3D) |
-|-------|------|--------|----------------|
-| meshconv (4 seeds) | 88 | ~3,400 | ~$37 |
-| weibull (10 seeds, 2 scenarios) | 420 | ~5,600 | ~$60 |
-| campaign (512 + 128) | 640 | ~31,500 | ~$350 |
-| highres (hero + stackref) | 2 | ~820 | ~$9 |
-| stack (full / oat) | 240 / 54 | ~10,400 / 2,300 | ~$115 / $25 |
-| **Total (full)** | | **~52,000** | **~$570 (C4D ≈ $1,000)** |
+  These are October 2026 values from a third-party tracker, and Spot prices change up to daily. `bench.py` runs each family in its cheapest region, then recommends a (machine, region) pair from the measured throughput.
+* **Bucket co-location:** create the bucket and the Artifact Registry image repository in the **same region** as the compute. Then nothing crosses regions, and you pay nothing for transfer. Pull only `--what small` (CSV/JSON) to your desk; the binaries stay in the bucket.
 
-Storage is minor: the campaign keeps summary data only (use `--keep-state` for dumps). The hero run's state series is about 0.4 GB per dump.
+### Cost-saving measures built in
+
+* **Lean profiles by default.** Every planner has `--profile lean|full` (or equivalent options). Lean keeps each study's decision intact and drops the redundant levels.
+* **Staged campaign.**
+  * Stage 1 is 128 training + 32 validation runs.
+  * `fit_pysr.py --learning-curve` refits on nested 25/50/100 % subsets.
+  * `campaign.py plan --extend` adds 128 + 32 more from the same Sobol sequence, and **only if** the last doubling still cut the validation error by more than 10 %.
+* **Lean numerics** (`--numerics lean`): 2 kW/m load steps and coarser creep sub-steps, about half the steps. Check against `--numerics fine` on a handful of cases before relying on it.
+* **Looser tolerance between crack cycles.** The solver relaxes at `--tol-cycle` (3e-3) between bond-breaking cycles, then once more at `--tol` (1e-3) for the final equilibrium of each step.
+* **Smaller hero run:** nr = 48 by default, about a third of nr = 64's cost. Use `--nr-hero 64` for the full one.
+* **One-factor-at-a-time stack design first:** 54 runs. Run the 240-run factorial only where the first pass shows interactions.
+
+**Planner estimates.** These use `config.COST`: 0.2 G bond-evaluations/s per vCPU, about 110 ADR iterations per step per particle across the radius, and c3d Spot at $0.0042/vCPU-h. Expect ±2–3×, and replace them with benchmark numbers.
+
+| Study | Lean: runs | vCPU-h | USD | Full: runs | vCPU-h | USD |
+|-------|-----------|--------|-----|-----------|--------|-----|
+| meshconv | 42 | ~1,300 | ~$5 | 88 | ~3,400 | ~$14 |
+| weibull | 40 | ~530 | ~$2 | 420 | ~5,600 | ~$24 |
+| campaign | 160 (stage 1) | ~4,100 | ~$17 | 640 (fine numerics) | ~32,000 | ~$134 |
+| highres (hero + stackref) | 2 | ~290 | ~$1 | 2 | ~820 | ~$3 |
+| stack | 54 | ~2,300 | ~$10 | 240 | ~10,400 | ~$44 |
+| **Total** | | **~8,500** | **~$36** | | **~52,000** | **~$220** |
+
+Each campaign extension stage adds about $17. The benchmark costs a few dollars. Storage is minor: the campaign keeps summary data only (use `--keep-state` for dumps), and the hero state series is about 0.2 GB per dump at nr = 48.
 
 ## 7. Limitations and risks
 

@@ -39,6 +39,7 @@ import sys
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 
+import config
 import pdio
 from schema import SCHEMA_VERSION, schema_dict
 
@@ -78,8 +79,8 @@ def case_id(prefix: str, index: int, params: dict) -> str:
 
 # ----------------------------------------------------------------------------- planning
 def plan_study(study_dir: str, study_name: str, cases: list[Case], study_def: dict, *, threads: int = 0,
-               ckpt_every: int = 2, card: str = "", machine: str = "c3d-highcpu-30", parallelism: int = 50,
-               region: str = "us-central1", image: str = "REGION-docker.pkg.dev/PROJECT/pellet/pellet-pd:2",
+               ckpt_every: int = 2, card: str = "", machine: str = config.MACHINE, parallelism: int = 50,
+               region: str = config.REGION, image: str = config.IMAGE,
                bucket: str = "BUCKET", max_run_h: float = 24.0, keep_state: bool = True, keep_vtk: bool = False) -> None:
     """Write study.json, cases.csv, histories, jobs (tsv, local, Slurm, Cloud Batch), DATASET_CARD.md, schema.json."""
     os.makedirs(study_dir, exist_ok=True)
@@ -203,6 +204,24 @@ def write_card(study_dir: str, study: str, sdef: dict, text: str) -> None:
         f.write("## Provenance and caveats\n\nSimulated data (3D state-based peridynamics, prescribed temperature "
                 "field). Material-property distributions are modelling assumptions recorded in `study.json`, not "
                 "measurements. Licence / citation / contact: _fill in before sharing_.\n")
+
+
+def restrict_jobs(study_dir: str, case_ids: list[str], tag: str) -> str:
+    """Keep only `case_ids` in jobs/jobs.tsv (saved as jobs/jobs_<tag>.tsv too) and resize the Batch job,
+    so an extension stage submits only its new runs."""
+    keep = set(case_ids)
+    jp = os.path.join(study_dir, "jobs", "jobs.tsv")
+    lines = [l for l in open(jp) if l.split("\t", 1)[0] in keep]
+    for path in (jp, os.path.join(study_dir, "jobs", f"jobs_{tag}.tsv")):
+        with open(path, "w") as f:
+            f.writelines(lines)
+    bj = os.path.join(study_dir, "jobs", "batch_job.json")
+    job = json.load(open(bj))
+    tg = job["taskGroups"][0]
+    tg["taskCount"] = len(lines)
+    tg["parallelism"] = min(tg["parallelism"], max(1, len(lines)))
+    json.dump(job, open(bj, "w"), indent=1)
+    return jp
 
 
 # ----------------------------------------------------------------------------- local execution

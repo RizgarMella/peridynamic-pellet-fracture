@@ -27,11 +27,20 @@ CREEP = dict(tauRef=3600.0, TtauRef=1700.0, Qact=380e3, lamv=1.0)   # assumed re
 # ---- default calibration (overridden by meshconv/derived/convergence.json when it exists) ----
 CALIB = dict(mode="strength", sigmaf=SIGMA_F, delta=0.40e-3, mfac=3.0, weibull=10.0, wcorr=0.25e-3)
 
+# ---- where to run: cheapest Spot capacity found (Oct 2026, gcloud-compute.com tracker; Spot prices
+# change up to daily - re-check before a large submission). Keep the BUCKET in the SAME region:
+# compute and storage co-located means no inter-region transfer charges.
+#   c3d-highcpu-30 Spot: australia-southeast1 ~$0.0042/vCPU-h, us-central1 ~$0.0095/vCPU-h
+#   c4d-highcpu-32 Spot: us-west4 ~$0.0079/vCPU-h;  t2d-standard-32: europe-southwest1 ~$0.0073/vCPU-h
+REGION = "australia-southeast1"
+MACHINE = "c3d-highcpu-30"
+IMAGE = f"{REGION}-docker.pkg.dev/PROJECT/pellet/pellet-pd:2"
+
 # ---- cost model (refine with bench.py results) ----
 COST = dict(
     gbes_per_vcpu=0.20,          # G bond-evaluations per second per vCPU (2-vCPU sandbox measured ~0.23)
     iters_per_step_per_nr=110.0, # ADR iterations per load step per particle-across-radius (pilot runs)
-    usd_per_vcpu_h=0.011,        # Spot C3D us-central1, Oct 2026 (update from bench/prices.json)
+    usd_per_vcpu_h=0.0042,       # Spot c3d-highcpu-30, australia-southeast1, Oct 2026 (update from bench)
 )
 
 

@@ -218,10 +218,10 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sp = ap.add_subparsers(dest="cmd", required=True)
     p = sp.add_parser("plan"); p.add_argument("--restart", required=True); p.add_argument("--root", default="studies")
-    p.add_argument("--name", default="stack"); p.add_argument("--design", choices=["full", "oat"], default="full")
+    p.add_argument("--name", default="stack"); p.add_argument("--design", choices=["full", "oat"], default="oat", help="oat = lean first pass (54 runs)")
     p.add_argument("--calib", default="studies/meshconv/derived/convergence.json")
     p.add_argument("--bucket", default="BUCKET"); p.add_argument("--machine", default="c3d-highcpu-60")
-    p.add_argument("--image", default="us-central1-docker.pkg.dev/PROJECT/pellet/pellet-pd:2")
+    p.add_argument("--image", default=config.IMAGE)
     for n in ("analyze", "plot"):
         q = sp.add_parser(n); q.add_argument("study_dir")
     a = ap.parse_args()

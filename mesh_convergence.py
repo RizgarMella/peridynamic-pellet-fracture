@@ -39,6 +39,14 @@ import study_common as sc
 
 M_LEVELS = [2.0, 2.5, 3.0, 4.0, 5.0]
 NR_LEVELS = [8, 12, 16, 24, 32, 48]
+# lean profile: everything needed for the decision, nothing more.
+#  strength mode (the campaign calibration): full m-family + 4 delta levels;
+#  energy mode: 3 m levels and 3 delta levels - enough to show (non-)convergence.
+PROFILES = {
+    "full": {"strength": {"m": M_LEVELS, "delta": NR_LEVELS}, "energy": {"m": M_LEVELS, "delta": NR_LEVELS}},
+    "lean": {"strength": {"m": [2.5, 3.0, 4.0, 5.0], "delta": [8, 12, 16, 24]},
+             "energy": {"m": [2.5, 3.0, 4.0], "delta": [8, 12, 16]}},
+}
 Q_STAR = [5e3, 10e3, 15e3, 20e3, 25e3, 30e3]
 Q_PEAK = 30e3
 DQ = 1e3
@@ -49,9 +57,10 @@ def plan(a):
     cal = dict(config.CALIB)
     cases, k = [], 0
     est = []
+    prof = PROFILES[a.profile]
     for mode in ("strength", "energy"):
-        for fam, levels in (("m", M_LEVELS), ("delta", NR_LEVELS)):
-            for lev in levels:
+        for fam in ("m", "delta"):
+            for lev in prof[mode][fam]:
                 for seed in range(a.seeds):
                     p = dict(config.UO2, **config.GEOM, weibull=cal["weibull"], wcorr=cal["wcorr"], seed=seed + 1,
                              qmax=Q_PEAK, dqmax=DQ, every=5)
@@ -74,10 +83,10 @@ def plan(a):
                         est.append((mode, fam, lev, e))
                     k += 1
     sc.plan_study(sdir, a.name, cases,
-                  {"purpose": "mesh convergence on crack area", "m_levels": M_LEVELS, "nr_levels": NR_LEVELS,
+                  {"purpose": "mesh convergence on crack area", "profile": a.profile, "levels": prof,
                    "q_star_Wpm": Q_STAR, "calibration": cal, "seeds": a.seeds, "material": config.UO2,
                    "geometry": config.GEOM},
-                  bucket=a.bucket, image=a.image, machine=a.machine,
+                  bucket=a.bucket, image=a.image, machine=a.machine, region=a.region,
                   card=__doc__.split("Metrics")[0])
     tot = sum(e["vcpu_h"] for *_, e in est) * a.seeds
     print(f"estimated compute: {tot:,.0f} vCPU-h  (~${tot * config.COST['usd_per_vcpu_h']:,.0f} Spot); largest run "
@@ -237,9 +246,11 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sp = ap.add_subparsers(dest="cmd", required=True)
     p = sp.add_parser("plan"); p.add_argument("--root", default="studies"); p.add_argument("--name", default="meshconv")
-    p.add_argument("--seeds", type=int, default=4); p.add_argument("--bucket", default="BUCKET")
-    p.add_argument("--image", default="us-central1-docker.pkg.dev/PROJECT/pellet/pellet-pd:2")
-    p.add_argument("--machine", default="c3d-highcpu-30")
+    p.add_argument("--seeds", type=int, default=3); p.add_argument("--bucket", default="BUCKET")
+    p.add_argument("--profile", choices=["lean", "full"], default="lean")
+    p.add_argument("--region", default=config.REGION)
+    p.add_argument("--image", default=config.IMAGE)
+    p.add_argument("--machine", default=config.MACHINE)
     for name in ("analyze", "plot"):
         q = sp.add_parser(name); q.add_argument("study_dir"); q.add_argument("--tol", type=float, default=0.10)
         q.add_argument("--q-ref", type=float, default=20e3)

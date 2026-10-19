@@ -21,6 +21,7 @@ Outputs in <study>/derived/pysr/:
 Figures in <study>/figures/: parity and Pareto plots.
 
   python fit_pysr.py studies/campaign-A [--niter 400 --maxsize 30 --targets log10_nfrag]
+  python fit_pysr.py studies/campaign-A --learning-curve      # extend the campaign or stop?
 """
 from __future__ import annotations
 
@@ -121,6 +122,48 @@ def fit(a):
         plot(sdir)
 
 
+def learning_curve(a):
+    """Fit on nested 25/50/100 % subsets of the training split (Sobol order -> each subset is itself
+    space-filling) and score on the full validation split.  Decision rule for the staged campaign:
+    extend (campaign.py plan --extend) only if going from 50 % to 100 % still cut validation RMSE
+    by more than --lc-gain (default 10 %) for the selected equation."""
+    import pandas as pd
+    from sklearn.ensemble import HistGradientBoostingRegressor
+    from sklearn.metrics import mean_squared_error
+    sdir = a.study_dir
+    df = pd.read_csv(os.path.join(sdir, "derived", "dataset.csv"))
+    df = df[df.status == "complete"]
+    od = os.path.join(sdir, "derived", "pysr")
+    os.makedirs(od, exist_ok=True)
+    feats, rows = list(ft.FEATURES), []
+    for target in (a.targets or ft.TARGETS[:1]):
+        d = df[np.isfinite(df[target])]
+        tr = d[d.split == "train"].sort_values("case_id")
+        va = d[d.split == "val"]
+        Xva, yva = va[feats].to_numpy(float), va[target].to_numpy(float)
+        for frac in (0.25, 0.5, 1.0):
+            sub = tr.iloc[: max(10, int(round(frac * len(tr))))]
+            X, y = sub[feats].to_numpy(float), sub[target].to_numpy(float)
+            m = make_model(a, od, f"{target}_lc{int(frac * 100)}")
+            m.fit(X, y, variable_names=feats)
+            errs = [float(np.sqrt(mean_squared_error(yva, m.predict(Xva, index=i)))) for i in range(len(m.equations_))]
+            best = min(errs)
+            ok = [i for i, e in enumerate(errs) if e <= best * (1 + a.slack)]
+            idx = min(ok, key=lambda i: m.equations_["complexity"].iloc[i])
+            gbr = HistGradientBoostingRegressor(random_state=a.seed).fit(X, y)
+            rows.append(dict(target=target, train_frac=frac, n_train=len(sub), sr_val_rmse=errs[idx],
+                             sr_complexity=int(m.equations_["complexity"].iloc[idx]),
+                             gbr_val_rmse=float(np.sqrt(mean_squared_error(yva, gbr.predict(Xva))))))
+    lc = pd.DataFrame(rows)
+    sc.save_table(lc, os.path.join(od, "learning_curve.csv"), "Validation RMSE vs training-set size (nested Sobol subsets)")
+    for target, g in lc.groupby("target"):
+        g = g.sort_values("train_frac")
+        half, full = g.sr_val_rmse.iloc[1], g.sr_val_rmse.iloc[2]
+        gain = (half - full) / half if half > 0 else 0.0
+        verdict = "EXTEND the campaign" if gain > a.lc_gain else "enough data"
+        print(f"{target}: val RMSE 50% {half:.4f} -> 100% {full:.4f} ({gain:+.0%} gain) -> {verdict}")
+
+
 def plot(sdir):
     import glob
     import matplotlib
@@ -158,8 +201,15 @@ def main():
     ap.add_argument("--slack", type=float, default=0.05)
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--plot-only", action="store_true")
+    ap.add_argument("--learning-curve", action="store_true", help="decide whether to extend the campaign")
+    ap.add_argument("--lc-gain", type=float, default=0.10)
     a = ap.parse_args()
-    plot(a.study_dir) if a.plot_only else fit(a)
+    if a.learning_curve:
+        learning_curve(a)
+    elif a.plot_only:
+        plot(a.study_dir)
+    else:
+        fit(a)
 
 
 if __name__ == "__main__":

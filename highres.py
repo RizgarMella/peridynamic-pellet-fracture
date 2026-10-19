@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""highres.py - production cracked pellets: one 'hero' high-resolution run and the
+"""highres.py - production cracked pellets: one 'hero' high-resolution run (nr 48 lean / 64 full) and the
 reference cracked pellet that the stack study restarts from.
 
 Protocol (both runs): creep on, heat to Q_PEAK over 3 h, hold 48 h, cool to zero
@@ -125,14 +125,14 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sp = ap.add_subparsers(dest="cmd", required=True)
     p = sp.add_parser("plan"); p.add_argument("--root", default="studies"); p.add_argument("--name", default="highres")
-    p.add_argument("--nr-hero", type=int, default=64); p.add_argument("--every-hero", type=int, default=5)
+    p.add_argument("--nr-hero", type=int, default=48, help="48 lean (~1/3 the cost of 64); 64 = full"); p.add_argument("--every-hero", type=int, default=5)
     p.add_argument("--nr-stack", type=int, default=0, help="0 = use the calibrated delta/m")
     p.add_argument("--calib", default="studies/meshconv/derived/convergence.json")
     p.add_argument("--machine-hero", default="c3d-highcpu-180"); p.add_argument("--machine-stack", default="c3d-highcpu-60")
     p.add_argument("--mem-gb", type=float, default=32.0); p.add_argument("--max-hours", type=float, default=72.0)
     p.add_argument("--ondemand", action="store_true", help="hero on a standard (non-Spot) VM")
-    p.add_argument("--bucket", default="BUCKET"); p.add_argument("--region", default="us-central1")
-    p.add_argument("--image", default="us-central1-docker.pkg.dev/PROJECT/pellet/pellet-pd:2")
+    p.add_argument("--bucket", default="BUCKET"); p.add_argument("--region", default=config.REGION)
+    p.add_argument("--image", default=config.IMAGE)
     q = sp.add_parser("post"); q.add_argument("study_dir"); q.add_argument("--warp", type=float, default=20.0)
     q.add_argument("--render", action="store_true")
     a = ap.parse_args()

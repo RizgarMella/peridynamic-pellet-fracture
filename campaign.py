@@ -90,20 +90,31 @@ def make_history(s: dict):
     return rows
 
 
-def sample(n: int, seed: int):
+def sample(n: int, seed: int, skip: int = 0):
+    """n Sobol points after skipping the first `skip` (extensions continue the same sequence)."""
     from scipy.stats import qmc
-    u = qmc.Sobol(d=len(DISTS), scramble=True, seed=seed).random(n)
+    eng = qmc.Sobol(d=len(DISTS), scramble=True, seed=seed)
+    if skip:
+        eng.fast_forward(skip)
+    u = eng.random(n)
     return [{name: _inv(float(u[i, j]), kind, par) for j, (name, kind, par) in enumerate(DISTS)} for i in range(n)]
 
 
-def to_solver(s: dict, cal: dict):
+NUMERICS = {  # 'lean' halves load steps and quarters hold sub-steps; check against 'fine' on a few cases
+    "fine": dict(dqmax=1e3, dt_div=8, dt_min=1.0, dt_max=25.0),
+    "lean": dict(dqmax=2e3, dt_div=4, dt_min=2.0, dt_max=50.0),
+}
+
+
+def to_solver(s: dict, cal: dict, numerics: str = "lean"):
+    nm = NUMERICS[numerics]
     R = s["R_mm"] * 1e-3
     H = s["H_over_D"] * 2 * R
     p = dict(R=R, H=H, E=s["E_GPa"] * 1e9, nu=s["nu"], alpha=s["alpha_per_MK"] * 1e-6, kth=s["k_WpmK"],
              Gc=s["Gc_Jpm2"], Tref=config.UO2["Tref"], gsurf=s["gsurf_Km_per_W"], weibull=s["weibull_m"],
              wcorr=cal["wcorr"], seed=s["seed"], delta=cal["delta"], mfac=cal["mfac"], creep=True,
              tauRef=s["tauRef_h"] * 3600.0, TtauRef=1700.0, Qact=s["Qact_kJpmol"] * 1e3, lamv=1.0,
-             dqmax=1e3, dtmax=float(np.clip(s["hold_h"] / 8, 1.0, 25.0)), every=1000)
+             dqmax=nm["dqmax"], dtmax=float(np.clip(s["hold_h"] / nm["dt_div"], nm["dt_min"], nm["dt_max"])), every=1000)
     if s["dish_frac"] >= 0.15:
         p.update(dishR=s["dish_frac"] * R, dishD=s["dish_depth_mm"] * 1e-3)
     if cal["mode"] == "strength":
@@ -114,26 +125,46 @@ def to_solver(s: dict, cal: dict):
 def plan(a):
     cal = config.load_calibration(a.calib)
     sdir = os.path.join(a.root, a.name)
-    tr, va = sample(a.n, a.seed), sample(a.nval, a.seed + 7919)
-    cases, tot, mem = [], 0.0, 0.0
+    old = []
+    skip_tr = skip_va = 0
+    if a.extend:
+        import pandas as pd
+        prev = pd.read_csv(os.path.join(sdir, "cases.csv"))
+        sdef = pdio.read_json(os.path.join(sdir, "study.json"))
+        cal, a.seed, a.numerics = sdef["calibration"], sdef["sobol_seed"], sdef["numerics"]
+        skip_tr, skip_va = int((prev.split == "train").sum()), int((prev.split == "val").sum())
+        for _, r in prev.iterrows():
+            s = {k: r[k] for k, _, _ in DISTS}
+            for k, kind, _ in DISTS:
+                if kind in ("I", "B"):
+                    s[k] = int(s[k])
+            old.append(sc.Case(r.case_id, to_solver(s, cal, a.numerics), history=make_history(s), split=r.split, factors=s))
+    tr = sample(a.n, a.seed, skip_tr)
+    va = sample(a.nval, a.seed + 7919, skip_va)
+    cases, new_ids, tot, mem = list(old), [], 0.0, 0.0
     for split, smp in (("train", tr), ("val", va)):
         for s in smp:
-            p = to_solver(s, cal)
+            p = to_solver(s, cal, a.numerics)
             hist = make_history(s)
             cid = sc.case_id("cp", len(cases), p)
+            new_ids.append(cid)
             cases.append(sc.Case(cid, p, history=hist, split=split, factors=dict(s)))
             e = config.estimate_run(p["R"], p["H"], cal["delta"], cal["mfac"],
-                                    config.steps_in_history(hist, 1e3, p["dtmax"]), creep=True)
+                                    config.steps_in_history(hist, p["dqmax"], p["dtmax"]), creep=True)
             tot += e["vcpu_h"]; mem = max(mem, e["mem_gb"])
     sc.plan_study(sdir, a.name, cases,
                   {"purpose": "parametric dataset for symbolic regression of fragment size",
-                   "design": "scrambled Sobol", "n_train": a.n, "n_val": a.nval, "sobol_seed": a.seed,
+                   "design": "scrambled Sobol (staged: --extend continues the sequence)",
+                   "n_train": skip_tr + a.n, "n_val": skip_va + a.nval, "sobol_seed": a.seed, "numerics": a.numerics,
                    "distributions": [dict(name=n, dist=k, params=p) for n, k, p in DISTS],
                    "distributions_note": "ASSUMED modelling distributions, not measured data",
                    "calibration": cal, "features": ft.FEATURES, "targets": ft.TARGETS},
                   bucket=a.bucket, image=a.image, machine=a.machine, keep_state=a.keep_state,
                   card=__doc__.split("dataset.csv")[0])
-    print(f"estimated compute: {tot:,.0f} vCPU-h (~${tot * config.COST['usd_per_vcpu_h']:,.0f} Spot); max {mem:.2f} GB/run")
+    if a.extend:
+        sc.restrict_jobs(sdir, new_ids, f"stage{skip_tr + a.n}")
+    print(f"{len(new_ids)} new runs: estimated {tot:,.0f} vCPU-h (~${tot * config.COST['usd_per_vcpu_h']:,.0f} Spot); "
+          f"max {mem:.2f} GB/run")
 
 
 def collect(a):
@@ -146,7 +177,7 @@ def collect(a):
     for _, c in cases.iterrows():
         d = os.path.join(sdir, "runs", c.case_id)
         s = c.to_dict()
-        p = to_solver({k: s[k] for k, _, _ in DISTS}, cal)
+        p = to_solver({k: s[k] for k, _, _ in DISTS}, cal, sdef.get("numerics", "lean"))
         geom = dict(R=p["R"], H=p["H"], dishR=p.get("dishR", 0.0), dishD=p.get("dishD", 0.0))
         mat = dict(E=p["E"], nu=p["nu"], alpha=p["alpha"], kth=p["kth"], Gc=p["Gc"], sigmaf=p.get("sigmaf"),
                    weibull=p["weibull"], tauRef=p["tauRef"], TtauRef=p["TtauRef"], Qact=p["Qact"], gsurf=p["gsurf"],
@@ -176,11 +207,14 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sp = ap.add_subparsers(dest="cmd", required=True)
     p = sp.add_parser("plan"); p.add_argument("--root", default="studies"); p.add_argument("--name", default="campaign-A")
-    p.add_argument("--n", type=int, default=512); p.add_argument("--nval", type=int, default=128)
+    p.add_argument("--n", type=int, default=128, help="training runs in this stage (power of 2)")
+    p.add_argument("--nval", type=int, default=32, help="validation runs in this stage (power of 2)")
+    p.add_argument("--extend", action="store_true", help="add a stage to an existing campaign (same Sobol sequence)")
+    p.add_argument("--numerics", choices=["lean", "fine"], default="lean")
     p.add_argument("--seed", type=int, default=2026); p.add_argument("--calib", default="studies/meshconv/derived/convergence.json")
     p.add_argument("--keep-state", action="store_true", help="keep state dumps at knots (default: summary data only)")
-    p.add_argument("--bucket", default="BUCKET"); p.add_argument("--machine", default="c3d-highcpu-30")
-    p.add_argument("--image", default="us-central1-docker.pkg.dev/PROJECT/pellet/pellet-pd:2")
+    p.add_argument("--bucket", default="BUCKET"); p.add_argument("--machine", default=config.MACHINE)
+    p.add_argument("--image", default=config.IMAGE)
     q = sp.add_parser("collect"); q.add_argument("study_dir")
     a = ap.parse_args()
     plan(a) if a.cmd == "plan" else collect(a)

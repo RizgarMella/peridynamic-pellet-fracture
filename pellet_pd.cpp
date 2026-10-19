@@ -126,6 +126,7 @@ struct Params {
     // solver
     int maxit = 6000, maxcycles = 20000;
     double kappa = 0.8, tol = 1e-3, sf = 1.0;
+    double tolCycle = 3e-3;                     // looser tolerance for relaxations between break cycles
     // analysis
     double dstress = 0.5, cover = 0.35, dcut = 0.35, onsetFrac = 0.05;
     int minfrag = 30;
@@ -151,7 +152,7 @@ static void usage() {
         "          --steps n | --dqmax W/m  --dtmax h\n"
         "STACK     --pin none|z|full|auto --pressure Pa --mu f (<0 stick) --cn --ctang\n"
         "          --contact-rmin m --restart file --restart-body b --restart-out file\n"
-        "SOLVER    --maxit --maxcycles --kappa --tol --sf --elastic\n"
+        "SOLVER    --maxit --maxcycles --kappa --tol --tol-cycle --sf --elastic\n"
         "ANALYSIS  --dstress --cover --dcut --minfrag --onsetFrac\n"
         "OUTPUT    --out dir --every n --novtk --nostate --verbose --dryrun [--gbes G]\n"
         "CLOUD     --ckpt-every n --resume   (SIGTERM -> exit 75 after the current ADR iteration)\n"
@@ -180,7 +181,7 @@ static bool parseArgs(int argc, char** argv, Params& p, std::string& cmdline) {
         {"TtauRef", &p.TtauRef}, {"Qact", &p.Qact}, {"lamv", &p.lamv}, {"qmax", &p.qmax}, {"kth", &p.kth},
         {"Tref", &p.Tref}, {"gsurf", &p.gsurf}, {"dqmax", &p.dqmax}, {"dtmax", &p.dtmax},
         {"pressure", &p.pressure}, {"mu", &p.mu}, {"cn", &p.cn}, {"ctang", &p.ctang},
-        {"contact-rmin", &p.contactRmin}, {"kappa", &p.kappa}, {"tol", &p.tol}, {"sf", &p.sf},
+        {"contact-rmin", &p.contactRmin}, {"kappa", &p.kappa}, {"tol", &p.tol}, {"tol-cycle", &p.tolCycle}, {"sf", &p.sf},
         {"dstress", &p.dstress}, {"cover", &p.cover}, {"dcut", &p.dcut}, {"onsetFrac", &p.onsetFrac},
         {"gbes", &p.gbes}};
     std::map<std::string, int*> itg = {{"nr", &p.nr}, {"steps", &p.steps}, {"maxit", &p.maxit},
@@ -935,12 +936,12 @@ struct Model {
     // ------------------------------------------------------------------
     struct StepInfo { int iters; double res; };
 
-    StepInfo relax(double scale) {
+    StepInfo relax(double scale, double tol) {
         StepInfo info{0, 1.0};
         const int64_t n3 = 3 * (int64_t)N;
         forces(u.data(), f.data());
         info.res = residInf(f) / scale;
-        if (info.res < p.tol) { commitSlip(); return info; }
+        if (info.res < tol) { commitSlip(); return info; }
 #pragma omp parallel for schedule(static)
         for (int64_t k = 0; k < n3; ++k) {
             v[k] = fixedDof[k] ? 0.0 : 0.5 * f[k] / lamb[k / 3];
@@ -987,7 +988,7 @@ struct Model {
             }
             info.iters = it;
             info.res = std::sqrt(fn) / scale;
-            if (it > 3 && info.res < p.tol) break;
+            if (it > 3 && info.res < tol) break;
             if (gStop) break;
         }
         (void)nfree;
@@ -1033,7 +1034,7 @@ struct Model {
         double bmax = 0;
         for (int64_t k = 0; k < 3 * (int64_t)N; ++k) bmax = std::max(bmax, std::fabs(bext[k]));
         const double scale = std::max({residInf(f), bmax, 1e-300});
-        auto r = relax(scale);
+        auto r = relax(scale, p.tol);
         LoadInfo L{r.iters, 0, r.res, 0, scale};
         if (p.elastic) return L;
         while (L.cycles < p.maxcycles && !gStop) {
@@ -1042,13 +1043,18 @@ struct Model {
             if (nb == 0) break;
             L.broken += nb;
             ++L.cycles;
-            r = relax(scale);
+            r = relax(scale, std::max(p.tol, p.tolCycle));
             L.iters += r.iters;
             L.res = r.res;
             if (cyclog) std::fprintf(cyclog, "%d,%d,%.5f,%lld,%d,%.4e\n", curStep, L.cycles, rmax, (long long)(nb / 2), r.iters, r.res);
             if (p.verbose)
                 std::printf("        cycle %5d  max ratio %.3f  broke %6lld  relax iters %5d  resid %.2e\n", L.cycles, rmax,
                             (long long)(nb / 2), r.iters, r.res);
+        }
+        if (L.cycles > 0 && p.tolCycle > p.tol && !gStop) {   // final equilibrium at the strict tolerance
+            r = relax(scale, p.tol);
+            L.iters += r.iters;
+            L.res = r.res;
         }
         return L;
     }
@@ -1457,13 +1463,13 @@ struct Model {
                          "\"lamv\":%.4f,\"qmax\":%.4f,\"kth\":%.5f,\"Tref\":%.4f,\"gsurf\":%.6e,\"history\":\"%s\","
                          "\"dqmax\":%.4f,\"dtmax\":%.4f,\"steps\":%d,\"pin\":\"%s\",\"pressure\":%.6e,\"mu\":%.5f,"
                          "\"cn\":%.4f,\"ctang\":%.4f,\"contact_rmin\":%.9e,\"maxit\":%d,\"maxcycles\":%d,\"kappa\":%.4f,"
-                         "\"tol\":%.3e,\"sf\":%.4f,\"dstress\":%.3f,\"cover\":%.3f,\"dcut\":%.3f,\"minfrag\":%d,"
+                         "\"tol\":%.3e,\"tol_cycle\":%.3e,\"sf\":%.4f,\"dstress\":%.3f,\"cover\":%.3f,\"dcut\":%.3f,\"minfrag\":%d,"
                          "\"onsetFrac\":%.4f,\"elastic\":%s,\"restart\":\"%s\",\"restart_body\":%d},\n",
                      q.R, q.H, q.dishR, q.dishD, q.chamfer, q.nr, q.mfac, q.delta, q.jitter, q.stack.c_str(), q.E, q.nu, q.alpha,
                      q.Gc, q.sc, q.sigmaf, q.calibDelta ? "true" : "false", q.weibull, q.wcorr, q.seed, q.ccomp,
                      q.creep ? "true" : "false", q.tauRef, q.TtauRef, q.Qact, q.lamv, q.qmax, q.kth, q.Tref, q.gsurf,
                      jesc(q.history).c_str(), q.dqmax, q.dtmax, q.steps, q.pin.c_str(), q.pressure, q.mu, q.cn, q.ctang,
-                     q.contactRmin, q.maxit, q.maxcycles, q.kappa, q.tol, q.sf, q.dstress, q.cover, q.dcut, q.minfrag,
+                     q.contactRmin, q.maxit, q.maxcycles, q.kappa, q.tol, q.tolCycle, q.sf, q.dstress, q.cover, q.dcut, q.minfrag,
                      q.onsetFrac, q.elastic ? "true" : "false", jesc(q.restartIn).c_str(), q.restartBody);
         std::fprintf(fp, "  \"derived\": {\"dx\":%.9e,\"delta\":%.9e,\"m_ratio\":%.5f,\"V\":%.9e,\"K\":%.6e,\"mu\":%.6e,"
                          "\"lambda\":%.6e,\"sc0\":%.6e,\"sc_from_Gc\":%.6e,\"sigma_from_sc_MPa\":%.4f,\"C_LPS\":%.6e,"
