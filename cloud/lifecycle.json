@@ -1,0 +1,12 @@
+{
+  "rule": [
+    {
+      "action": {"type": "Delete"},
+      "condition": {"age": 14, "matchesSuffix": ["checkpoint.bin", "checkpoint.bin.tmp"]}
+    },
+    {
+      "action": {"type": "SetStorageClass", "storageClass": "NEARLINE"},
+      "condition": {"age": 30, "matchesSuffix": [".bin", ".vtk", ".vtu", ".vtp"], "matchesStorageClass": ["STANDARD"]}
+    }
+  ]
+}

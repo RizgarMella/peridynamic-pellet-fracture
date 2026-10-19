@@ -1,0 +1,19 @@
+# build products
+pellet_pd
+*.o
+# study / run outputs live in Cloud Storage, not git
+studies/
+pd_out/
+check/
+demo/
+*.bin
+*.vtk
+*.vtu
+*.vtp
+# python
+__pycache__/
+*.pyc
+.ruff_cache/
+# PySR scratch
+outputs/
+hall_of_fame*.csv*

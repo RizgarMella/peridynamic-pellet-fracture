@@ -1,0 +1,10 @@
+# analysis / study tooling (the solver itself needs only g++ with OpenMP)
+numpy>=1.24
+scipy>=1.10
+pandas>=2.0
+matplotlib>=3.7
+pyarrow>=14        # optional: parquet copies of derived tables
+scikit-learn>=1.3  # baseline model next to the symbolic regression
+pysr>=2.0          # symbolic regression (needs Julia; installed on first use)
+sympy>=1.12
+pyvista>=0.43      # optional: crackmesh.py --render
