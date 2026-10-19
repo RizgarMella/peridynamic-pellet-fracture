@@ -14,6 +14,39 @@ Everything runs locally or as Spot-VM task arrays on Google Cloud Batch, with ou
 
 > Status: the solver and all tools compile, lint and dry-run cleanly. Kernels shared with v1 were verified against the analytic thermoelastic solution. **The v2 studies themselves have not been run yet.**
 
+## Results so far (version 1)
+
+These come from the **v1 solver** ([`v1/pellet_pd_v1.cpp`](v1/pellet_pd_v1.cpp)), the single-pellet predecessor of v2. v2 shares its force, fracture-cycle and stress-recovery kernels, but adds creep, stacks, contact, restarts and labelled outputs. They are a demonstration at coarse resolution, not converged results.
+
+![Peridynamic thermal cracking of a UO₂ pellet, v1](docs/images/v1_pellet_cracking.png)
+
+**Setup.**
+* Full-size pellet (R = 4.1 mm, H ≈ 9.7 mm), 16 particles across the radius: 30,856 particles and 4.9 M bonds.
+* G_c-calibrated critical stretch with per-bond Weibull scatter (m = 12).
+* Linear heat rate ramped from 0 to 25 kW/m in 25 steps, with no creep.
+* Run time: 16 min on 2 CPU cores, at about 450 M bond evaluations per second.
+
+**What the panels show.**
+* **Top row:** mid-plane damage.
+  * Four radial cracks open at about 2 kW/m.
+  * By 5 kW/m they have run inward and arrested near mid-radius, where the hot core is in compression.
+  * By 25 kW/m additional cracks and branches have fragmented the pellet.
+* **Bottom left:** hoop stress at 25 kW/m.
+  * Cracking has relieved the stress to about ±100 MPa, compared with the ~850 MPa elastic surface hoop stress of an uncracked pellet.
+  * Grey marks crack debris, where stress is not reported.
+* **Bottom, second:** the outer surface unrolled (angle × height).
+  * The radial cracks run along the full pellet height.
+* **Bottom, third: verification without fracture.**
+  * Mid-plane stresses against the analytic long-cylinder thermoelastic solution.
+  * Hoop-stress RMS error falls with refinement: 6.4 % → 4.5 % → 4.4 % for 8 → 12 → 16 particles across the radius.
+  * The remaining gap sits in the outermost particle layer: the known peridynamic surface effect.
+* **Bottom right:** cumulative broken bonds during the power ramp.
+
+**Limitations of these v1 results.**
+* The resolution is coarse, so the lattice gives cracks a mild 45°/90° preference.
+* Crack initiation power depends on the horizon size when s_c comes from G_c. This is the calibration issue v2's mesh-convergence study addresses (DESIGN.md §3).
+* The crack-debris stress mask in the figure was applied in post-processing using the rule that v2 now applies in the solver.
+
 ## Repository
 
 | File | Purpose |
