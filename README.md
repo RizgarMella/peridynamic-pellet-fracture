@@ -14,6 +14,48 @@ Everything runs locally or as Spot-VM task arrays on Google Cloud Batch, with ou
 
 > Status: the solver and all tools compile, lint and dry-run cleanly. Kernels shared with v1 were verified against the analytic thermoelastic solution. **The v2 studies themselves have not been run yet.**
 
+## Scientific background
+
+### Why fuel pellets crack
+
+Uranium dioxide fuel is a ceramic with a low thermal conductivity, a few W/m·K. When a pellet produces heat uniformly through its volume, the temperature profile across it is close to parabolic. The centre-to-surface difference is ΔT ≈ q′/(4πk) for a linear heat rate q′, which amounts to several hundred kelvin at normal operating power.
+
+The hot centre tries to expand more than the cooler rim. It ends up in compression, while the rim is pulled into circumferential (hoop) tension. For an uncracked cylinder, the elastic hoop stress at the surface is
+
+  σ_θθ(R) = α E ΔT / (2(1 − ν)),
+
+which exceeds the tensile strength of UO₂ (of order 100 MPa) at only a few kW/m. Every pellet therefore cracks on its first rise to power.
+
+Cracks start at the surface and run radially inwards until they reach the compressed core, where they stop. More cracks form and branch as power increases. Further cracking can happen on cool-down: if the hot core has relaxed its stresses by creep while at power, it is left in tension when it cools.
+
+Pellet cracking matters for fuel behaviour because it:
+
+* **Moves fragments.** Fragments relocate outwards and close the pellet–cladding gap. This changes heat transfer and therefore fuel temperatures.
+* **Concentrates stress on the cladding.** Crack mouths and pellet ends ("hourglassing") load the cladding locally, which is central to pellet–cladding interaction during power ramps.
+* **Opens gas pathways.** Cracks create release paths for fission gas.
+* **Sets fragment size.** Fragment size is a key input to assessing fuel fragmentation, relocation and dispersal under accident conditions.
+
+Pellets also do not crack in isolation. In a fuel rod they are stacked end to end, pressed together, and touch through dished and chamfered faces. Whether a crack in one pellet can trigger cracking in its neighbour across that interface (*sympathetic cracking*) depends on contact pressure, friction and contact area. This is an open question that this project addresses directly.
+
+### Why peridynamics
+
+Classical continuum mechanics is written in terms of spatial derivatives. Those derivatives are undefined across a crack, so conventional finite-element methods need special treatment to represent fracture: predefined crack paths, cohesive interfaces, enrichment or remeshing.
+
+**Peridynamics** reformulates continuum mechanics as an integral equation (Silling, 2000). Each material point interacts directly with all neighbours within a finite distance, the *horizon* δ, through *bonds*. With no derivatives involved, the same equation holds on and off a crack. Fracture is simply the irreversible breaking of bonds. Cracks nucleate, grow, branch and coalesce where the physics dictates, without being told where to go. That makes the method well suited to the many interacting cracks of a thermally shocked ceramic.
+
+This project uses **state-based** peridynamics (the Linear Peridynamic Solid, Silling et al., 2007). The force in a bond depends on the deformation of the whole neighbourhood, not only on that bond. This removes the fixed Poisson ratio of the simpler bond-based theory, so the real elastic constants of UO₂ can be used. Thermal expansion enters through each bond's reference length. A bond breaks when its stress-carrying stretch exceeds a critical value tied to the material's strength or fracture energy.
+
+### The questions this work addresses
+
+* **Length scale and convergence.** The horizon δ is a genuine physical length. A single bond-breaking criterion can match both tensile strength and fracture energy only when δ equals a material length related to the Irwin characteristic length E·G_c/σ_f². Making crack predictions converge as resolution increases therefore requires a careful choice of calibration. This is tested here by measuring convergence of the total crack surface area.
+* **Statistics of strength.** Ceramic strength is controlled by a population of flaws and is described by Weibull (weakest-link) statistics. How the *spread* of strength, not just its mean, controls crack onset, crack count and fragment size is studied by varying the Weibull modulus and the spatial correlation of flaws.
+* **A closed-form fragment model.** Simulations across geometries, material properties and heating/cooling cycles are condensed into dimensionless groups, in the spirit of Buckingham's Π theorem: thermal stress over strength, pellet size over the material's characteristic length, aspect ratio, creep relaxation achieved at power, and cycling severity. Symbolic regression then searches for compact, interpretable equations for fragment size, rather than an opaque surrogate model.
+* **Sympathetic cracking.** A pre-cracked pellet is placed between two half pellets, pressed and reheated. This measures whether, and under what pressure, friction and contact conditions, cracks align and propagate across pellet interfaces.
+
+### Scope
+
+The temperature field is prescribed from steady-state heat conduction, so it is not affected by the cracks. The model does not include burnup effects: fission-gas bubbles, swelling, densification, and the fine fragmentation seen at high burnup. Material property distributions in the parametric studies are stated modelling assumptions. See [DESIGN.md](DESIGN.md) §7 for the full list of limitations.
+
 ## Results so far (version 1)
 
 These come from the **v1 solver** ([`v1/pellet_pd_v1.cpp`](v1/pellet_pd_v1.cpp)), the single-pellet predecessor of v2. v2 shares its force, fracture-cycle and stress-recovery kernels, but adds creep, stacks, contact, restarts and labelled outputs. They are a demonstration at coarse resolution, not converged results.
