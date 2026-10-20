@@ -77,7 +77,7 @@ def plan(a):
         else:
             e = config.estimate_run(config.GEOM["R"], config.GEOM["H"], cal["delta"], cal["mfac"], nsteps, creep=True)
         print(f"{c.factors['role']:8s} nr={e['nr']:3d}: N~{e['N']:,} bonds~{e['NB']:,} mem~{e['mem_gb']:.1f} GB "
-              f"~{e['vcpu_h']:,.0f} vCPU-h (~${e['usd']:,.0f} Spot)")
+              f"~{e['vcpu_h']:,.0f} vCPU-h (~£{e['gbp']:,.0f} Spot)")
 
 
 def post(a):

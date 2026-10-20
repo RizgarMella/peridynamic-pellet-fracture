@@ -64,7 +64,7 @@ Run order and gates. Each arrow requires the previous gate to pass.
 
 ### 4.1 Benchmark (Q1)
 * **Case:** one fixed fracture case (nr = 24, 15 steps), run on 6 Spot machine types × {all vCPUs, physical cores}.
-* **Metric:** USD per 10¹² bond evaluations, computed from measured throughput and the Spot price per vCPU-hour.
+* **Metric:** pounds per 10¹² bond evaluations, computed from measured throughput and the Spot price per vCPU-hour.
 * **Gate:** pick the cheapest machine, then update `config.COST`. All planner cost estimates depend on this.
 
 ### 4.2 Mesh convergence on crack area (Q2)
@@ -219,18 +219,18 @@ Run order and gates. Each arrow requires the previous gate to pass.
 * **Smaller hero run:** nr = 48 by default, about a third of nr = 64's cost. Use `--nr-hero 64` for the full one.
 * **One-factor-at-a-time stack design first:** 54 runs. Run the 240-run factorial only where the first pass shows interactions.
 
-**Planner estimates.** These use `config.COST`: 0.2 G bond-evaluations/s per vCPU, about 110 ADR iterations per step per particle across the radius, and c3d Spot at $0.0042/vCPU-h. Expect ±2–3×, and replace them with benchmark numbers.
+**Planner estimates.** These use `config.COST`: 0.2 G bond-evaluations/s per vCPU, about 110 ADR iterations per step per particle across the radius, and c3d Spot at £0.0032/vCPU-h. Expect ±2–3×, and replace them with benchmark numbers.
 
-| Study | Lean: runs | vCPU-h | USD | Full: runs | vCPU-h | USD |
+| Study | Lean: runs | vCPU-h | £ | Full: runs | vCPU-h | £ |
 |-------|-----------|--------|-----|-----------|--------|-----|
-| meshconv | 42 | ~1,300 | ~$5 | 88 | ~3,400 | ~$14 |
-| weibull | 40 | ~530 | ~$2 | 420 | ~5,600 | ~$24 |
-| campaign | 160 (stage 1) | ~4,100 | ~$17 | 640 (fine numerics) | ~32,000 | ~$134 |
-| highres (hero + stackref) | 2 | ~290 | ~$1 | 2 | ~820 | ~$3 |
-| stack | 54 | ~2,300 | ~$10 | 240 | ~10,400 | ~$44 |
-| **Total** | | **~8,500** | **~$36** | | **~52,000** | **~$220** |
+| meshconv | 42 | ~1,300 | ~£4 | 88 | ~3,400 | ~£11 |
+| weibull | 40 | ~530 | ~£2 | 420 | ~5,600 | ~£18 |
+| campaign | 160 (stage 1) | ~4,100 | ~£13 | 640 (fine numerics) | ~32,000 | ~£101 |
+| highres (hero + stackref) | 2 | ~290 | ~£1 | 2 | ~820 | ~£3 |
+| stack | 54 | ~2,300 | ~£7 | 240 | ~10,400 | ~£33 |
+| **Total** | | **~8,500** | **~£27** | | **~52,000** | **~£165** |
 
-Each campaign extension stage adds about $17. The benchmark costs a few dollars. Storage is minor: the campaign keeps summary data only (use `--keep-state` for dumps), and the hero state series is about 0.2 GB per dump at nr = 48.
+Each campaign extension stage adds about £13. The benchmark costs a few pounds. Storage is minor: the campaign keeps summary data only (use `--keep-state` for dumps), and the hero state series is about 0.2 GB per dump at nr = 48.
 
 ## 7. Limitations and risks
 

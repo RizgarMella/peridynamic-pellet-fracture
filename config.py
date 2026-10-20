@@ -30,8 +30,11 @@ CALIB = dict(mode="strength", sigmaf=SIGMA_F, delta=0.40e-3, mfac=3.0, weibull=1
 # ---- where to run: cheapest Spot capacity found (Oct 2026, gcloud-compute.com tracker; Spot prices
 # change up to daily - re-check before a large submission). Keep the BUCKET in the SAME region:
 # compute and storage co-located means no inter-region transfer charges.
-#   c3d-highcpu-30 Spot: australia-southeast1 ~$0.0042/vCPU-h, us-central1 ~$0.0095/vCPU-h
-#   c4d-highcpu-32 Spot: us-west4 ~$0.0079/vCPU-h;  t2d-standard-32: europe-southwest1 ~$0.0073/vCPU-h
+# Prices are in pounds sterling, converted from Google's USD list prices at GBP_PER_USD below
+# (a UK billing account is invoiced in GBP; update the rate and prices together).
+#   c3d-highcpu-30 Spot: australia-southeast1 ~£0.0032/vCPU-h, us-central1 ~£0.0071/vCPU-h
+#   c4d-highcpu-32 Spot: us-west4 ~£0.0059/vCPU-h;  t2d-standard-32: europe-southwest1 ~£0.0055/vCPU-h
+GBP_PER_USD = 0.75             # exchange rate used for the prices below (20 Oct 2026)
 REGION = "australia-southeast1"
 MACHINE = "c3d-highcpu-30"
 IMAGE = f"{REGION}-docker.pkg.dev/PROJECT/pellet/pellet-pd:2"
@@ -40,7 +43,7 @@ IMAGE = f"{REGION}-docker.pkg.dev/PROJECT/pellet/pellet-pd:2"
 COST = dict(
     gbes_per_vcpu=0.20,          # G bond-evaluations per second per vCPU (2-vCPU sandbox measured ~0.23)
     iters_per_step_per_nr=110.0, # ADR iterations per load step per particle-across-radius (pilot runs)
-    usd_per_vcpu_h=0.0042,       # Spot c3d-highcpu-30, australia-southeast1, Oct 2026 (update from bench)
+    gbp_per_vcpu_h=0.00315,      # £ Spot c3d-highcpu-30, australia-southeast1, Oct 2026 ($0.0042 x 0.75; update from bench)
 )
 
 
@@ -88,7 +91,7 @@ def estimate_run(R: float, H: float, delta: float, mfac: float, n_steps: int, n_
     work = 2.0 * NB * iters
     vcpu_h = work / (COST["gbes_per_vcpu"] * 1e9) / 3600.0
     mem_gb = (NB * (23 if creep else 17) + N * 330) / 2 ** 30
-    return dict(nr=nr, dx=dx, N=int(N), NB=int(NB), iters=int(iters), vcpu_h=vcpu_h, usd=vcpu_h * COST["usd_per_vcpu_h"],
+    return dict(nr=nr, dx=dx, N=int(N), NB=int(NB), iters=int(iters), vcpu_h=vcpu_h, gbp=vcpu_h * COST["gbp_per_vcpu_h"],
                 mem_gb=mem_gb)
 
 

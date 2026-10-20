@@ -8,7 +8,7 @@ A high-performance, single-file C++17/OpenMP **state-based peridynamics** solver
 * a high-resolution production run;
 * sympathetic cracking between stacked pellets.
 
-Everything runs locally or as Spot-VM task arrays on Google Cloud Batch, with outputs organised in a versioned Cloud Storage layout. Planners default to a **lean** profile, run in the cheapest Spot region: about $36 for the whole programme at current prices, against about $220 for the full designs (DESIGN.md §6).
+Everything runs locally or as Spot-VM task arrays on Google Cloud Batch, with outputs organised in a versioned Cloud Storage layout. Planners default to a **lean** profile, run in the cheapest Spot region: about £27 for the whole programme at current prices, against about £165 for the full designs (DESIGN.md §6).
 
 **Start with [DESIGN.md](DESIGN.md)**: questions, model, the strength-vs-energy calibration decision, every study's design and gates, the data layout, cloud plan, cost estimates and limitations.
 

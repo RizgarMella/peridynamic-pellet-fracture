@@ -108,7 +108,7 @@ def plan(a):
     nsteps = config.steps_in_history(config.ramp_hold_cool(Q_PEAK, 3.0, 24.0, 3.0), 1e3, 4.0)
     e = config.estimate_run(R, H, delta, delta / dx, nsteps, n_bodies_h=2.0, creep=hdr["creep"])
     print(f"{len(cases)} runs; each ~{e['N']:,} particles, {e['mem_gb']:.1f} GB, ~{e['vcpu_h']:.0f} vCPU-h -> "
-          f"total ~{e['vcpu_h'] * len(cases):,.0f} vCPU-h (~${e['usd'] * len(cases):,.0f} Spot)")
+          f"total ~{e['vcpu_h'] * len(cases):,.0f} vCPU-h (~£{e['gbp'] * len(cases):,.0f} Spot)")
 
 
 # ----------------------------------------------------------------------------- analysis

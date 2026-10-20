@@ -163,7 +163,7 @@ def plan(a):
                   card=__doc__.split("dataset.csv")[0])
     if a.extend:
         sc.restrict_jobs(sdir, new_ids, f"stage{skip_tr + a.n}")
-    print(f"{len(new_ids)} new runs: estimated {tot:,.0f} vCPU-h (~${tot * config.COST['usd_per_vcpu_h']:,.0f} Spot); "
+    print(f"{len(new_ids)} new runs: estimated {tot:,.0f} vCPU-h (~£{tot * config.COST['gbp_per_vcpu_h']:,.0f} Spot); "
           f"max {mem:.2f} GB/run")
 
 

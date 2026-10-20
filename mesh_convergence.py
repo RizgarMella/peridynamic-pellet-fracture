@@ -89,7 +89,7 @@ def plan(a):
                   bucket=a.bucket, image=a.image, machine=a.machine, region=a.region,
                   card=__doc__.split("Metrics")[0])
     tot = sum(e["vcpu_h"] for *_, e in est) * a.seeds
-    print(f"estimated compute: {tot:,.0f} vCPU-h  (~${tot * config.COST['usd_per_vcpu_h']:,.0f} Spot); largest run "
+    print(f"estimated compute: {tot:,.0f} vCPU-h  (~£{tot * config.COST['gbp_per_vcpu_h']:,.0f} Spot); largest run "
           f"{max(e['mem_gb'] for *_, e in est):.1f} GB")
 
 

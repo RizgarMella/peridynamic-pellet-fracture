@@ -73,7 +73,7 @@ def plan(a):
                   bucket=a.bucket, image=a.image, machine=a.machine, card=__doc__.split("Outputs")[0])
     e = config.estimate_run(config.GEOM["R"], config.GEOM["H"], cal["delta"], cal["mfac"], 40)
     tot = e["vcpu_h"] * len(cases)
-    print(f"estimated compute: {tot:,.0f} vCPU-h (~${tot * config.COST['usd_per_vcpu_h']:,.0f} Spot), {e['mem_gb']:.2f} GB/run")
+    print(f"estimated compute: {tot:,.0f} vCPU-h (~£{tot * config.COST['gbp_per_vcpu_h']:,.0f} Spot), {e['mem_gb']:.2f} GB/run")
 
 
 def _boot_ci(v, n=2000, rng=np.random.default_rng(0)):

@@ -2,7 +2,7 @@
 """bench.py - pick the cheapest Google Cloud machine for pellet_pd by measurement.
 
 Runs one fixed, representative case (fracture on, ~15 load steps) on several Spot
-machine types and thread counts, then ranks them by USD per 10^12 bond-evaluations
+machine types and thread counts, then ranks them by pounds (GBP) per 10^12 bond-evaluations
 (the solver's unit of work) and by wall time.  Run this BEFORE the large studies;
 its result updates config.COST via derived/bench_recommendation.json.
 
@@ -23,16 +23,18 @@ import study_common as sc
 
 MACHINES = ["c3d-highcpu-30", "c4d-highcpu-32", "t2d-standard-32", "n2d-highcpu-32"]
 
-# Spot USD per vCPU-hour in each family's cheapest region (whole-VM Spot price / vCPUs),
+# Spot price in GBP per vCPU-hour in each family's cheapest region (whole-VM Spot price / vCPUs),
+# converted from Google's USD list prices at config.GBP_PER_USD,
 # from the gcloud-compute.com tracker, Oct 2026.  Throughput per vCPU is region-independent, so the
 # benchmark can run anywhere; the analysis prices each family at its cheapest region and
 # recommends a (machine, region) pair.  Spot prices change up to daily: refresh before analysing.
 DEFAULT_PRICES = {
-    "_note": "family -> [USD per vCPU-hour, region]. Refresh from cloud.google.com/spot-vms/pricing.",
-    "c3d": [0.0042, "australia-southeast1"],
-    "c4d": [0.0079, "us-west4"],
-    "t2d": [0.0073, "europe-southwest1"],
-    "n2d": [0.0086, "asia-southeast1"],
+    "_note": "family -> [GBP per vCPU-hour, region], from USD list prices x 0.75 (20 Oct 2026). "
+             "Refresh from cloud.google.com/spot-vms/pricing.",
+    "c3d": [0.0032, "australia-southeast1"],
+    "c4d": [0.0059, "us-west4"],
+    "t2d": [0.0055, "europe-southwest1"],
+    "n2d": [0.0065, "asia-southeast1"],
 }
 
 
@@ -92,25 +94,25 @@ def analyze(a):
         s = pdio.read_json(os.path.join(d, "summary.json"))
         fam = c.machine.split("-")[0]
         price, region = prices.get(fam, [float("nan"), ""])
-        usd_h = price * c.vcpu
+        gbp_h = price * c.vcpu
         gbes = s["throughput_Mbond_per_s"] / 1e3
         rows.append(dict(case_id=c.case_id, machine=c.machine, region=region, vcpu=c.vcpu, threads=c.threads,
                          solver_time_s=s["solver_time_s"], throughput_Gbond_per_s=gbes,
-                         Gbond_per_s_per_vcpu=gbes / c.vcpu, vm_usd_per_h=usd_h,
-                         usd_per_Tbond=usd_h / (gbes * 3600 / 1e3) if gbes > 0 else float("nan")))
-    df = pd.DataFrame(rows).sort_values("usd_per_Tbond")
+                         Gbond_per_s_per_vcpu=gbes / c.vcpu, vm_gbp_per_h=gbp_h,
+                         gbp_per_Tbond=gbp_h / (gbes * 3600 / 1e3) if gbes > 0 else float("nan")))
+    df = pd.DataFrame(rows).sort_values("gbp_per_Tbond")
     sc.save_table(df, os.path.join(sdir, "derived", "bench_results.csv"),
                   "Measured throughput and price-performance per machine type / thread count",
-                  units={"usd_per_Tbond": "USD per 1e12 bond evaluations", "vm_usd_per_h": "USD/h",
+                  units={"gbp_per_Tbond": "GBP per 1e12 bond evaluations", "vm_gbp_per_h": "GBP/h",
                          "throughput_Gbond_per_s": "1e9 bond evaluations / s", "Gbond_per_s_per_vcpu": "1e9/s/vCPU"},
                   sources=list(df.case_id))
     if len(df):
         best = df.iloc[0]
         rec = {"machine": best.machine, "region": best.region, "threads": int(best.threads), "gbes_per_vcpu": float(best.Gbond_per_s_per_vcpu),
-               "usd_per_vcpu_h": float(best.vm_usd_per_h / best.vcpu), "usd_per_Tbond": float(best.usd_per_Tbond)}
+               "gbp_per_vcpu_h": float(best.vm_gbp_per_h / best.vcpu), "gbp_per_Tbond": float(best.gbp_per_Tbond)}
         json.dump(rec, open(os.path.join(sdir, "derived", "bench_recommendation.json"), "w"), indent=1)
         print(df.to_string(index=False))
-        print("recommendation:", rec, "\n-> set config.REGION / MACHINE and copy gbes_per_vcpu / usd_per_vcpu_h into config.COST")
+        print("recommendation:", rec, "\n-> set config.REGION / MACHINE and copy gbes_per_vcpu / gbp_per_vcpu_h into config.COST")
 
 
 def main():
