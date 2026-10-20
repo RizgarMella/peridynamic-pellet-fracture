@@ -197,14 +197,15 @@ Run order and gates. Each arrow requires the previous gate to pass.
 * **Preemption and retries:** the solver writes atomic checkpoints every `--ckpt-every` steps. On SIGTERM it aborts the current step and exits 75; Batch retries on 75 and on 50001 (VM preempted).
 * **Region (cheapest first).** Spot prices differ by more than 2× between regions. Batch work doesn't care where it runs, so `config.REGION` defaults to the cheapest region found.
 
-  | Machine (Spot) | Cheapest region | $/vCPU-h | us-central1 $/vCPU-h |
+  | Machine (Spot) | Cheapest region | £/vCPU-h | us-central1 £/vCPU-h |
   |---|---|---|---|
-  | c3d-highcpu-30 | australia-southeast1 | ~0.0042 | ~0.0095 |
-  | t2d-standard-32 | europe-southwest1 | ~0.0073 | – |
-  | c4d-highcpu-32 | us-west4 | ~0.0079 | ~0.016 |
-  | n2d-highcpu-32 | asia-southeast1 | ~0.0086 | – |
+  | c3d-highcpu-30 | australia-southeast1 | ~0.0032 | ~0.0071 |
+  | t2d-standard-32 | europe-southwest1 | ~0.0055 | – |
+  | c4d-highcpu-32 | us-west4 | ~0.0059 | ~0.012 |
+  | n2d-highcpu-32 | asia-southeast1 | ~0.0065 | – |
 
-  These are October 2026 values from a third-party tracker, and Spot prices change up to daily. `bench.py` runs each family in its cheapest region, then recommends a (machine, region) pair from the measured throughput.
+  These are October 2026 values from a third-party tracker, converted from Google's USD list prices at
+  `config.GBP_PER_USD` (0.75), and Spot prices change up to daily. `bench.py` runs each family in its cheapest region, then recommends a (machine, region) pair from the measured throughput.
 * **Bucket co-location:** create the bucket and the Artifact Registry image repository in the **same region** as the compute. Then nothing crosses regions, and you pay nothing for transfer. Pull only `--what small` (CSV/JSON) to your desk; the binaries stay in the bucket.
 
 ### Cost-saving measures built in

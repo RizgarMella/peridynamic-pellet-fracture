@@ -43,7 +43,7 @@ IMAGE = f"{REGION}-docker.pkg.dev/PROJECT/pellet/pellet-pd:2"
 COST = dict(
     gbes_per_vcpu=0.20,          # G bond-evaluations per second per vCPU (2-vCPU sandbox measured ~0.23)
     iters_per_step_per_nr=110.0, # ADR iterations per load step per particle-across-radius (pilot runs)
-    gbp_per_vcpu_h=0.00315,      # £ Spot c3d-highcpu-30, australia-southeast1, Oct 2026 ($0.0042 x 0.75; update from bench)
+    gbp_per_vcpu_h=0.00315,      # £ Spot c3d-highcpu-30, australia-southeast1, Oct 2026 (USD list price 0.0042 x 0.75; update from bench)
 )
 
 
